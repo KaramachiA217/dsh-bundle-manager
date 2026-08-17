@@ -1,0 +1,27 @@
+name: Publish Package
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # OIDC：npm trusted publishing 必需（签发短期身份凭证）
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest   # 必须是 GitHub-hosted runner
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'                       # npm >= 11.5.1（OIDC 要求）
+          registry-url: 'https://registry.npmjs.org'
+      - name: Upgrade npm
+        run: npm install -g npm@latest
+      - name: CI gate (syntax + harness + secret scan + sanitization + pack whitelist)
+        run: npm run ci
+      # Trusted publishing: 无 NODE_AUTH_TOKEN / 无 .npmrc token —— npm 自动走 OIDC
+      - name: Publish to npm (OIDC)
+        run: npm publish
