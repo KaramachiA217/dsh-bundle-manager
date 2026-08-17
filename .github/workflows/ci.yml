@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest]
+        node: [20, 24]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: CI gate (syntax + harness + secret scan + sanitization + pack whitelist)
+        run: npm run ci
+      - name: Pack dry-run
+        run: npm pack --dry-run

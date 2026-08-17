@@ -1,0 +1,52 @@
+{
+  "name": "dsh-bundle-manager",
+  "version": "0.4.4",
+  "description": "DSH web plugin: runtime mount manager for optional third-party plugin bundles — mount/unmount bundle rows in-process through the Loader API (instant, no restart, never touches the profile manifest), with named presets and self-healing failure fallback. (renamed from dsh-plugin-manager)",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ],
+      "platform": "web"
+    }
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "README.en.md",
+    "MANUAL.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "check": "node --check lib/index.js && node --check lib/client.js",
+    "test": "node test/harness.mjs",
+    "ci": "node scripts/ci.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KaramachiA217/dsh-bundle-manager.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.0-rc.0",
+    "@deepseek-ai/dsh-host-webserver": ">=0.1.0-rc.0",
+    "@deepseek-ai/dsh-client-runtime": ">=0.1.0-rc.0",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.0-rc.0"
+  },
+  "license": "MIT"
+}

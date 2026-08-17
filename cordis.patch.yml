@@ -1,0 +1,7 @@
+# dsh-bundle-manager bundle patch: one insert row mounting the plugin. When
+# installed through the official CLI (`dsh plugin --profile <name> add <spec>`),
+# the command reconciles dsh.profile.bundles against installed packages and
+# appends this bundle to the profile layer stack.
+- insert:
+    - id: dsh-bundle-manager
+      name: 'dsh-bundle-manager'

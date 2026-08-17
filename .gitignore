@@ -1,0 +1,10 @@
+# runtime state written by the plugin (mount table) — never commit
+# (covers registry.json / .bak / .tmp / .corrupt-<ts> variants)
+registry.json*
+
+# build / packaging artifacts
+*.tgz
+node_modules/
+
+# offline test harness scratch tree
+test/.scratch/
