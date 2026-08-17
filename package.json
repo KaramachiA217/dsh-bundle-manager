@@ -43,6 +43,7 @@
     "node": ">=20"
   },
   "peerDependencies": {
+    "dsh-settings-ui": ">=0.2.16",
     "@deepseek-ai/cordis": ">=4.0.0-rc.0",
     "@deepseek-ai/dsh-host-webserver": ">=0.1.0-rc.0",
     "@deepseek-ai/dsh-client-runtime": ">=0.1.0-rc.0",
