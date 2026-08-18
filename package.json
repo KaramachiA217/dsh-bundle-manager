@@ -1,6 +1,6 @@
 {
   "name": "dsh-bundle-manager",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "DSH web plugin: runtime mount manager for optional third-party plugin bundles — mount/unmount bundle rows in-process through the Loader API (instant, no restart, never touches the profile manifest), with named presets and self-healing failure fallback. (renamed from dsh-plugin-manager)",
   "type": "module",
   "main": "lib/index.js",
@@ -25,7 +25,7 @@
     "lib",
     "cordis.patch.yml",
     "README.md",
-    "README.en.md",
+    "README.zh.md",
     "MANUAL.md",
     "LICENSE",
     "CHANGELOG.md"

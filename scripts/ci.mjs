@@ -69,7 +69,7 @@ for (const f of ['README.md', 'MANUAL.md', 'CHANGELOG.md', 'LICENSE']) {
 
 // 5. npm files 白名单校验
 step('5/5 npm 打包白名单')
-const expectedFiles = ['lib', 'cordis.patch.yml', 'README.md', 'README.en.md', 'MANUAL.md', 'CHANGELOG.md', 'LICENSE']
+const expectedFiles = ['lib', 'cordis.patch.yml', 'README.md', 'README.zh.md', 'MANUAL.md', 'CHANGELOG.md', 'LICENSE']
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 const actual = pkg.files ?? []
 if (JSON.stringify([...actual].sort()) !== JSON.stringify([...expectedFiles].sort())) {
