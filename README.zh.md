@@ -7,7 +7,7 @@ DSH Web/桌面端插件：在设置页提供一个「插件挂载管理」sectio
 
 ## 0. 关键架构要求（必读）
 
-第三方插件必须**移出 `dsh.profile.bundles`、只留在 `dependencies`**，让 plugin-manager 成为唯一挂载入口：
+第三方插件必须**移出 `dsh.profile.bundles`、只留在 `dependencies`**，让 dsh-bundle-manager 成为唯一挂载入口：
 
 ```jsonc
 // profiles/<name>/package.json —— bundles 只留框架核心
@@ -43,7 +43,7 @@ dsh plugin --profile <name> add <path-to-this-package>
 
 ```
 dsh-bundle-manager/
-├── cordis.patch.yml    # 单行 insert（id: plugin-manager, name: dsh-bundle-manager）
+├── cordis.patch.yml    # 单行 insert（id: bundle-manager, name: dsh-bundle-manager）
 ├── package.json        # name/version/exports/dsh.bundle/dsh.client
 ├── lib/
 │   ├── index.js        # host 半：读 profile / 自管持久层 / 启动期重挂 / fenced 路由 / disposer
@@ -101,7 +101,7 @@ dsh-bundle-manager/
 3. **环境变量**：`DSH_PROFILE`（读 profile 目录用，桌面壳 main.js 注入，缺失从包路径推导再回退 `'web'`）；`DSH_BUNDLE_MANAGER_HOME`（v0.3，桌面壳注入，挂载表落壳仓库、零写 `.dsh`；缺失/非法回退 generic 双写）。
 4. **config 编辑未实现**：挂载表里的 `config` 预留（默认 `null`）。带 config 的插件后续 UI 再补。
 5. **写盘失败会明示**（v0.3）：registry 写失败时，操作响应返回 `storage-error`、设置页顶部出现黄色警示条（「本次更改重启后可能失效」）；挂载本身在内存已生效。
-6. **兼容性**：开发/实测基准为 deepseek-harness **0.1.0-rc.5**（`@deepseek-ai/cordis` 4.x rc、`dsh-host-webserver`/`dsh-client-runtime`/`dsh-client-ui-slots` 0.1.x rc）。**rc.6 实测通过（2026-08-17）**：rc5 与 rc6 源码同 commit（`47f9438`，仅 npm bump），rc6 内核下运行时挂载/卸载、framework 白名单、坏插件隔离（Failed 组 + kind/attempts）、预设切换、registry 落盘、client 半全部通过，**零代码适配**。已知差异：`link:` 挂载因 ESM 解析失败，须用 `file:` tgz；plugin-manager 用自有 fenced 路由，不依赖 rc5 的 `WEB_SETTINGS_NAMESPACES` 本地补丁。升级 dsh 版本后请重跑 `npm test` 与 dev 壳两阶验证。
+6. **兼容性**：开发/实测基准为 deepseek-harness **0.1.0-rc.5**（`@deepseek-ai/cordis` 4.x rc、`dsh-host-webserver`/`dsh-client-runtime`/`dsh-client-ui-slots` 0.1.x rc）。**rc.6 实测通过（2026-08-17）**：rc5 与 rc6 源码同 commit（`47f9438`，仅 npm bump），rc6 内核下运行时挂载/卸载、framework 白名单、坏插件隔离（Failed 组 + kind/attempts）、预设切换、registry 落盘、client 半全部通过，**零代码适配**。已知差异：`link:` 挂载因 ESM 解析失败，须用 `file:` tgz；dsh-bundle-manager 用自有 fenced 路由，不依赖 rc5 的 `WEB_SETTINGS_NAMESPACES` 本地补丁。升级 dsh 版本后请重跑 `npm test` 与 dev 壳两阶验证。
 
 ## 6. 安全
 
@@ -114,7 +114,7 @@ dsh-bundle-manager/
 
 ```sh
 node --check lib/index.js lib/client.js     # 纯 JS，无构建步骤
-node test/harness.mjs                       # 离线回归：46 断言（迁移/坏文件/播种/看门狗/存储错误/框架保护/预设 diff）
+node test/harness.mjs                       # 离线回归：159 断言（迁移/坏文件/播种/看门狗/存储错误/框架保护/预设 diff）
 npm pack --cache <npm-cache-dir>            # 出 tgz（file: 挂载，禁 link:）
 ```
 

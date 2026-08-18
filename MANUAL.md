@@ -1,7 +1,7 @@
 # dsh-bundle-manager 使用与开发手册
 
 > 完整详细的插件挂载管理器使用与开发手册。快速入门见 `README.md`。
-> 版本：0.3.0。最后更新：2026-08-16。
+> 版本：0.4.5。最后更新：2026-08-16。
 
 ---
 
@@ -100,7 +100,7 @@ dsh plugin --profile <name> add <path-to-this-package>
 ```json
 {
   "profile": "desktop-dev",
-  "version": "0.3.0",
+  "version": "0.4.5",
   "activePreset": "default",
   "presets": ["default"],
   "storage": {
@@ -190,7 +190,7 @@ dsh plugin --profile <name> add <path-to-this-package>
 
 ```
 dsh-bundle-manager/
-├── cordis.patch.yml     # 单行 insert（id: plugin-manager, name: dsh-bundle-manager）
+├── cordis.patch.yml     # 单行 insert（id: bundle-manager, name: dsh-bundle-manager）
 ├── package.json         # name/version/exports/dsh.bundle/dsh.client
 ├── lib/
 │   ├── index.js         # host 半边（Node 进程，ESM）
@@ -298,7 +298,7 @@ ctx.webServer.register({ kind: 'prefix', path: '/bundle-manager/api', handler: a
 ### 8.3 验证清单（自检）
 
 - [ ] `node --check lib/index.js lib/client.js` 通过。
-- [ ] **`node test/harness.mjs` 46 断言全过**（v0.3 起：迁移/坏文件保底/播种/broken-manifest/看门狗/storage-error/框架保护/预设 diff/generic 双写；含一个 ~20s 用例）。
+- [ ] **`node test/harness.mjs` 159 断言全过**（v0.3 起：迁移/坏文件保底/播种/broken-manifest/看门狗/storage-error/框架保护/预设 diff/generic 双写；含一个 ~20s 用例）。
 - [ ] 设置页列表正确（包名 + 版本 + state；broken-manifest 行黄色点禁用；failed 行带分类+次数；storage 告警条）。
 - [ ] toggle 开关 → 内存树该行出现/消失；registry 更新；无重启。
 - [ ] 重启 → 按表重挂（shell 模式 registry 在壳目录，`.dsh` mirror 不再被写）。
