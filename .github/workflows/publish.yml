@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest   # 必须是 GitHub-hosted runner
+    runs-on: windows-latest   # harness 的 shell 模式用例依赖 Windows 盘符 env 校验，CI 门禁须在 windows 跑；OIDC 支持所有 hosted runner
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
