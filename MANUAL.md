@@ -99,7 +99,7 @@ dsh plugin --profile <name> add <path-to-this-package>
 
 ```json
 {
-  "profile": "desktop-dev",
+  "profile": "rc6-dev",
   "version": "0.4.5",
   "activePreset": "default",
   "presets": ["default"],
@@ -291,7 +291,7 @@ ctx.webServer.register({ kind: 'prefix', path: '/bundle-manager/api', handler: a
 2. bump `package.json` patch 版本（**必做**，见 P4）。
 3. 同步源码到壳仓库 `plugins/dsh-bundle-manager/` 副本 → `npm pack --cache <npm-cache-dir>`。
 4. 更新 profile `package.json` 的 `file:` 路径 → `pnpm install --no-frozen-lockfile`。
-5. dev 壳（`desktop-dev` profile）验证 → web-dev 复测 → 同步稳定壳 + push。
+5. dev 壳（`rc6-dev` profile）验证 → web 端复验（浏览器打开壳实例；原 web-dev 复测命令已删除 2026-08-18，见全局 HANDOFF §2）→ 同步稳定壳 + push。
 
 > 本地快速迭代可临时「直接覆盖 `node_modules/dsh-bundle-manager/lib/index.js` + 重启 dsh」绕过 pack/install，正式发布仍走 bump+pack。
 

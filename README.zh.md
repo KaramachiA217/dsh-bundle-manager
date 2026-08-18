@@ -118,5 +118,5 @@ node test/harness.mjs                       # 离线回归：159 断言（迁移
 npm pack --cache <npm-cache-dir>            # 出 tgz（file: 挂载，禁 link:）
 ```
 
-- dev 壳（`dsh-desktop-shell-dev`，挂 `desktop-dev` profile）验证；报错只在 dev、稳定 desktop 永远可用。
+- dev 壳（`dsh-desktop-shell-dev`，挂 `rc6-dev` profile）验证；报错只在 dev、稳定 rc6-stable 永远可用。
 - 参考实现：`dsh-mcp-manager`（同型列表 + kit）、官方 `packages/host/directory-picker-auto`（运行时挂载范本）、`dsh-settings-ui`（kit）。
