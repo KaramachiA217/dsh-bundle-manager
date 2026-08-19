@@ -33,11 +33,17 @@ DSH Web/桌面端插件：在设置页提供一个「插件挂载管理」sectio
 
 ## 2. 安装
 
+官方 npm 方式（首选）：
+
 ```sh
-dsh plugin --profile <name> add <path-to-this-package>
+dsh plugin --profile <profile-name> add dsh-bundle-manager
 ```
 
+npm latest 目前 **0.5.3**；日后升级重跑同一条命令加 `@latest`（`dsh plugin --profile <profile-name> add dsh-bundle-manager@latest`）。
+
 然后按 §0 把第三方插件移出 bundles，重启该 profile 的 dsh 实例，设置 → 插件挂载管理。
+
+本地开发（可选）：`npm pack` 出 tgz 后 `dsh plugin --profile <profile-name> add ./dsh-bundle-manager-<ver>.tgz`（或手写 `file:` 依赖；rc.6 起禁 `link:`），每次改动重打 tgz。
 
 ## 3. 结构与原理
 

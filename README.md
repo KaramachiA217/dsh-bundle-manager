@@ -9,18 +9,24 @@ A runtime mount manager for optional third-party plugin bundles in DeepSeek Harn
 
 ## Install
 
+Install from npm with the official CLI (one step: adds the dependency, then reconcile appends the package to `dsh.profile.bundles`):
+
 ```sh
-npm i dsh-bundle-manager
+dsh plugin --profile <profile-name> add dsh-bundle-manager
 ```
 
-**Key architecture requirement**: optional third-party plugins must live in `dependencies` only (NOT in `dsh.profile.bundles`), and this plugin is the only framework bundle that mounts them at runtime:
+npm latest is currently **0.5.3**; upgrade later by re-running with `@latest` (`dsh plugin --profile <profile-name> add dsh-bundle-manager@latest`).
+
+**Key architecture requirement**: optional third-party plugins must live in `dependencies` only (NOT in `dsh.profile.bundles`), and this plugin is the only framework bundle that mounts them at runtime. The resulting profile layout (what the CLI produces):
 
 ```json
 {
-  "dependencies": { "dsh-bundle-manager": "npm:dsh-bundle-manager" },
+  "dependencies": { "dsh-bundle-manager": "^0.5.3" },
   "dsh": { "profile": { "bundles": ["dsh-base", "dsh-web-app", "dsh-settings-ui", "dsh-bundle-manager"] } }
 }
 ```
+
+Local development (optional): `npm pack` to build the tarball, then `dsh plugin --profile <profile-name> add ./dsh-bundle-manager-<ver>.tgz` (or a `file:` dependency), re-packing on every change — see [Development](#development).
 
 ## What you get
 
