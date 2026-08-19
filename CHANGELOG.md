@@ -2,6 +2,34 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.5.6] - 2026-08-20
+
+### Changed（全 UI 双语 + 双轨操作收口 + 行/预设卡样式回归）
+
+- **全 UI 中英双语（locale.register + bind）**：新增 `DICT_ZH` / `DICT_EN` 双字典，`apply` 时 `ctx.locale.register('dsh-bundle-manager', { zh, en })` + `bind` 出 `t`，`section()` 声明 `locale` 命名空间；locale 服务缺席时回退中文。全部文案（状态 / 失败分类 / 按钮 / 对话框 / toast / 提示）走字典 + `{param}` 插值。
+- **双轨整卡移除 → 头部「导入/导出」下拉菜单**：官方共存双轨整卡删除，改为设置卡头部「导入/导出」下拉（官方静态层导入列表 + 全选、bm 托管批量导出 / 卸载、导出全部安全网、回滚上次导入）。
+- **托管行行内导出/卸载**：`managed-by-bm` / `pending-import` 托管行右侧新增「导出 / 卸载」小按钮，无需先勾选即可单行操作。
+- **预设卡改官方卡壳模型（pcard，可收起）**：`OfficialSectionCard`——默认收起 layer-3 亮面 + 官方 `IconChevronDownOutline14` 旋转，展开 layer-2 页面同色 + 切换器 / 保存 / 删除 / hint；折叠状态沿用 localStorage。
+- **行卡恢复 v0.4.4 样式**：0.5.4 行卡官方卡壳模型回退——恢复 `ui.Card row:true` + `sui-card-title/main/meta` + 右侧 Switch 的 v0.4.4 行样式，不再使用独立 `PluginRowCard` 组件。
+
+### Fixed
+
+- **版本徽章判断改走字典**：`row.version !== tk('unknown')`（替换硬编码中文「未知」），行卡版本徽章跟随当前语言。
+- **broken-manifest 开关提示改 `row.state` 直判**：移除旧 `brokenManifest` 局部变量路径，提示语走字典 `switchBroken`。
+
+## [0.5.5] - 2026-08-20
+
+### Fixed
+
+- **PluginRowCard 全部改用 `ui.h`**（0.5.4 误用未定义的裸 `h` → 行卡渲染抛 `h is not defined`，点击导入/任何行卡挂载触发「该设置页渲染出错」错误边界）。
+
+## [0.5.4] - 2026-08-20
+
+### Changed（挂载行卡转官方卡壳模型，配套 kit 0.4.0）
+
+- **插件行卡 = 官方 PluginCard 模型**（对齐 kit `pluginCard` official chrome）：收起 `layer-3` 亮面 + 名称/状态描述（版本·状态·失败分类·等待服务）+ 官方 `IconChevronDownOutline14` 旋转；展开 `layer-2` 页面同色 + 挂载开关行 + 错误信息。图标经 `settingsUi.official` 指针复用官方基元。
+- 依赖 kit `>=0.3.0` 不变（官方卡壳 CSS 随 kit 0.4.0 提供）。
+
 ## [0.5.3] - 2026-08-19
 
 ### Changed（壳窗②用户实测 UI 批次：折叠 + 显隐 + 节奏统一）
