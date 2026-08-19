@@ -174,12 +174,16 @@ function goodManifest(version = '1.0.0') {
   }
 }
 
-function profileManifest(deps) {
+function profileManifest(deps, bundles) {
   return {
     name: 'dsh-profile-pmtest',
     private: true,
     dependencies: deps,
-    dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'dsh-bundle-manager'] } },
+    dsh: {
+      profile: {
+        bundles: bundles ?? ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'dsh-bundle-manager'],
+      },
+    },
   }
 }
 
@@ -212,9 +216,9 @@ function installFake(profileDir, pkgName, packageJsonText) {
  * Returns { apply, ctx } after running apply(ctx) so the boot reconcile and
  * route registration have already happened.
  */
-async function bootCase({ name, dshHome, profileDir, pkgDir, shellHome, env, ctx, profileDeps }) {
+async function bootCase({ name, dshHome, profileDir, pkgDir, shellHome, env, ctx, profileDeps, profileBundles }) {
   // profile manifest
-  writeJson(join(profileDir, 'package.json'), profileManifest(profileDeps ?? {}))
+  writeJson(join(profileDir, 'package.json'), profileManifest(profileDeps ?? {}, profileBundles))
   // env for THIS module instance
   process.env.DSH_HOME = dshHome
   process.env.DSH_PROFILE = 'pmtest'
@@ -671,6 +675,250 @@ async function casePresetDelete() {
   assert(badName.json.ok === false, '非法名被拒')
 }
 
+// ── 0.5.0 对外双轨 / 卸载半边 测试（T17+）─────────────────────────────────────
+
+function profileBundlesOf(profileDir) {
+  return JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8')).dsh?.profile?.bundles ?? []
+}
+
+/** T17 — registry 行状态机：旧行默认 managed-by-bm；superseded-by-static 只读 */
+async function caseRowStateMachine() {
+  console.log('\n[T17] registry 行状态机迁移 + 只读展示')
+  const { shellHome, profileDir, dshHome, pkgDir } = buildCase('t17-state-machine')
+  installFake(profileDir, 'dsh-good', JSON.stringify(goodManifest()))
+  installFake(profileDir, 'dsh-static', JSON.stringify(goodManifest()))
+  // 预写 registry：dsh-good 旧格式（无 state）→ 归一化 managed-by-bm；dsh-static 已固化
+  writeJson(join(shellHome, 'registry.json'), {
+    version: 1,
+    activePreset: 'default',
+    presets: { default: {
+      'dsh-good': { config: null },
+      'dsh-static': { config: null, state: 'superseded-by-static' },
+    } },
+    failed: {},
+  })
+  const ctx = makeCtx()
+  await bootCase({
+    name: 't17', dshHome, profileDir, pkgDir, shellHome,
+    env: { pluginManagerHome: shellHome }, ctx,
+    profileDeps: { 'dsh-good': '1.0.0', 'dsh-static': '1.0.0' },
+    // dsh-static 放官方静态层
+    profileBundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'dsh-bundle-manager', 'dsh-static'],
+  })
+  const res = await callApi(ctx, 'list', {})
+  const byPkg = {}
+  for (const p of res.json.value.plugins) byPkg[p.pkg] = p
+  // 旧格式行 → 归一化 managed-by-bm（dsh-good 为正常 toggleable 候选，boot 已挂载）
+  assert(byPkg['dsh-good'] && byPkg['dsh-good'].regState === 'managed-by-bm', '旧格式行归一化 managed-by-bm')
+  assert(byPkg['dsh-good'] && byPkg['dsh-good'].mounted === true, '候选 dsh-good boot 已挂载')
+  // dsh-static 在 bundles → 只读 superseded-by-static（非候选）
+  assert(byPkg['dsh-static'] && byPkg['dsh-static'].regState === 'superseded-by-static', '已固化行 regState=superseded-by-static')
+  assert(byPkg['dsh-static'] && byPkg['dsh-static'].state === 'superseded-by-static', '已固化行只读展示')
+  // 已固化行不可 toggle（apply ON 被拒：双重挂载防线）
+  const apply = await callApi(ctx, 'apply', { entries: { 'dsh-static': true } })
+  assert(apply.json.ok === false && (apply.json.error?.code === 'superseded-by-static' || apply.json.error?.code === 'bad-request'),
+    '静态层行 apply ON 被拒（双重挂载防线）')
+  // 顶层 bundles 只读展示
+  assert(res.json.value.bundles.includes('dsh-static'), 'list.bundles 含 dsh-static')
+}
+
+/** T18 — create 过滤：官方静态层包不双重挂载（boot 不 create、标 superseded-by-static） */
+async function caseDoubleMountFilter() {
+  console.log('\n[T18] create 过滤：静态层包不双重挂载')
+  const { shellHome, profileDir, dshHome, pkgDir } = buildCase('t18-double-mount')
+  installFake(profileDir, 'dsh-good', JSON.stringify(goodManifest()))
+  // 预写 registry：dsh-good 也想被 bm 管（managed-by-bm）——但它在官方静态层
+  writeJson(join(shellHome, 'registry.json'), {
+    version: 1,
+    activePreset: 'default',
+    presets: { default: { 'dsh-good': { config: null, state: 'managed-by-bm' } } },
+    failed: {},
+  })
+  // 计数式 create 行为：验证 bm 对静态层包不发 create
+  const ctx = makeCtx((options) => 'ok')
+  // 模拟官方静态 boot 挂载（id include:dsh-good）
+  ctx.bootEntries(['dsh-good'])
+  await bootCase({
+    name: 't18', dshHome, profileDir, pkgDir, shellHome,
+    env: { pluginManagerHome: shellHome }, ctx,
+    profileDeps: { 'dsh-good': '1.0.0' },
+    profileBundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'dsh-bundle-manager', 'dsh-good'],
+  })
+  // bm 不应 create（已在静态层）
+  assert(ctx.createCounts['dsh-good'] === undefined, 'boot 未对静态层包 create（不双重挂载）')
+  const list = await callApi(ctx, 'list', {})
+  const row = list.json.value.plugins.find(p => p.pkg === 'dsh-good')
+  assert(row && row.regState === 'superseded-by-static', '静态层行标 superseded-by-static')
+  assert(row && row.mounted === true && row.managed === false, '静态层行保持静态挂载（managed=false）')
+  // registry 行已从 managed-by-bm 收敛为 superseded-by-static
+  const reg = JSON.parse(readFileSync(join(shellHome, 'registry.json'), 'utf8'))
+  assert(reg.presets?.default?.['dsh-good']?.state === 'superseded-by-static', 'registry 行收敛为 superseded-by-static')
+}
+
+/** T19 — import-to-bm：白名单 + 摘条 + 预注册 pending-import + 失败可见 + A 级备份 */
+async function caseImportToBm() {
+  console.log('\n[T19] import-to-bm：摘 bundles + 预注册 + 失败可见 + .bm.bak')
+  const { shellHome, profileDir, dshHome, pkgDir } = buildCase('t19-import')
+  installFake(profileDir, 'dsh-good', JSON.stringify(goodManifest()))
+  installFake(profileDir, 'dsh-also', JSON.stringify(goodManifest()))
+  // dsh-good 在静态层；dsh-also 在 dependencies（deps-only）
+  const ctx = makeCtx()
+  await bootCase({
+    name: 't19', dshHome, profileDir, pkgDir, shellHome,
+    env: { pluginManagerHome: shellHome }, ctx,
+    profileDeps: { 'dsh-good': '1.0.0', 'dsh-also': '1.0.0' },
+    profileBundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'dsh-bundle-manager', 'dsh-good'],
+  })
+  const before = profileBundlesOf(profileDir)
+  const imp = await callApi(ctx, 'import-to-bm', { pkg: ['dsh-good', 'dsh-also', 'dsh-missing'] })
+  const v = imp.json.value
+  assert(imp.json.ok === true, 'import-to-bm ok')
+  assert(v.imported.includes('dsh-good') && v.imported.includes('dsh-also'), '两个有效包导入')
+  // 白名单：未安装的 dsh-missing 被拒（可见）
+  assert(v.rejected.some(r => r.pkg === 'dsh-missing'), '未安装包 rejected')
+  // 摘条：dsh-good 从 bundles 移除（manifest 变更 → needsRestart）
+  const after = profileBundlesOf(profileDir)
+  assert(!after.includes('dsh-good') && before.includes('dsh-good'), 'dsh-good 从 bundles 摘除')
+  assert(v.needsRestart === true, '导入后需重启')
+  // 预注册：dsh-good（原在 bundles）→ pending-import；dsh-also（deps-only）→ managed-by-bm
+  const reg = JSON.parse(readFileSync(join(shellHome, 'registry.json'), 'utf8'))
+  assert(reg.presets?.default?.['dsh-good']?.state === 'pending-import', '原静态层包预注册 pending-import')
+  assert(reg.presets?.default?.['dsh-also']?.state === 'managed-by-bm', 'deps-only 包预注册 managed-by-bm')
+  // A 级冗余 3：返回 snapshotId（供一键回滚）
+  assert(typeof v.snapshotId === 'string' && v.snapshotId !== '', '返回 import snapshotId')
+  // A 级冗余 1：.bm.bak 保底（导入前 manifest 快照）
+  assert(existsSync(join(profileDir, 'package.json.bm.bak')), '导入产生 package.json.bm.bak 备份')
+  // 写后的 bundles 与 .bm.bak 前状态一致（dsh-good 仍在 .bm.bak 里）
+  const bak = JSON.parse(readFileSync(join(profileDir, 'package.json.bm.bak'), 'utf8'))
+  assert(bak.dsh?.profile?.bundles.includes('dsh-good'), '.bm.bak 保留导入前 bundles（含 dsh-good）')
+  // 导入后（当前会话，未重启）list 展示 dsh-good 为 pending-import（待重启接管）
+  const afterList = await callApi(ctx, 'list', {})
+  assert(afterList.json.value.plugins.find(p => p.pkg === 'dsh-good')?.regState === 'pending-import',
+    '导入后 list 展示 pending-import（待重启接管）')
+}
+
+/** T20 — export-to-bundles：加进 bundles + superseded-by-static + 重启引导 */
+async function caseExportToBundles() {
+  console.log('\n[T20] export-to-bundles：固化 + superseded-by-static')
+  const { shellHome, profileDir, dshHome, pkgDir } = buildCase('t20-export')
+  installFake(profileDir, 'dsh-good', JSON.stringify(goodManifest()))
+  // 计数式 create：验证 bm 实际 create 挂载 dsh-good
+  const ctx = makeCtx((options) => 'ok')
+  await bootCase({
+    name: 't20', dshHome, profileDir, pkgDir, shellHome,
+    env: { pluginManagerHome: shellHome }, ctx, profileDeps: { 'dsh-good': '1.0.0' },
+  })
+  // 先托管 dsh-good（deps-only → bm 挂载）
+  let apply = await callApi(ctx, 'apply', { entries: { 'dsh-good': true } })
+  assert(apply.json.ok === true, 'apply dsh-good ON ok')
+  assert(ctx.createCounts['dsh-good'] === 1, 'dsh-good 由 bm create 挂载')
+  // 导出固化
+  const ex = await callApi(ctx, 'export-to-bundles', { pkg: ['dsh-good'] })
+  const v = ex.json.value
+  assert(ex.json.ok === true, 'export-to-bundles ok')
+  assert(v.exported.includes('dsh-good'), '导出包含 dsh-good')
+  assert(v.needsRestart === true, '导出后需重启')
+  assert(profileBundlesOf(profileDir).includes('dsh-good'), 'dsh-good 已加入官方静态层')
+  const reg = JSON.parse(readFileSync(join(shellHome, 'registry.json'), 'utf8'))
+  assert(reg.presets?.default?.['dsh-good']?.state === 'superseded-by-static', '导出后行标 superseded-by-static')
+  // framework-hard-protect：导出框架被拒
+  const fw = await callApi(ctx, 'export-to-bundles', { pkg: ['dsh-bundle-manager'] })
+  assert(Array.isArray(fw.json.value?.rejected) && fw.json.value.rejected.some(r => r.code === 'framework-protected'),
+    '导出框架被拒（framework-protected）')
+  // 未托管包导出被拒
+  const notManaged = await callApi(ctx, 'export-to-bundles', { pkg: ['dsh-ghost'] })
+  assert(notManaged.json.value.rejected.some(r => r.pkg === 'dsh-ghost'), '未托管包导出 rejected')
+}
+
+/** T21 — import/rollback：一键回滚批次（写回 bundles + 还原 registry 行） */
+async function caseImportRollback() {
+  console.log('\n[T21] import/rollback：写回 bundles + 还原行（A 级冗余 3）')
+  const { shellHome, profileDir, dshHome, pkgDir } = buildCase('t21-rollback')
+  installFake(profileDir, 'dsh-good', JSON.stringify(goodManifest()))
+  const ctx = makeCtx()
+  await bootCase({
+    name: 't21', dshHome, profileDir, pkgDir, shellHome,
+    env: { pluginManagerHome: shellHome }, ctx, profileDeps: { 'dsh-good': '1.0.0' },
+    profileBundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'dsh-bundle-manager', 'dsh-good'],
+  })
+  // 导入
+  const imp = await callApi(ctx, 'import-to-bm', { pkg: ['dsh-good'] })
+  const snapshotId = imp.json.value.snapshotId
+  assert(typeof snapshotId === 'string' && snapshotId, '导入生成 snapshotId')
+  assert(!profileBundlesOf(profileDir).includes('dsh-good'), '导入后 dsh-good 已摘条')
+  // 回滚
+  const rb = await callApi(ctx, 'import/rollback', { id: snapshotId })
+  assert(rb.json.ok === true, 'import/rollback ok')
+  assert(profileBundlesOf(profileDir).includes('dsh-good'), '回滚后 dsh-good 写回 bundles')
+  // 快照无效 id → not-found
+  const bad = await callApi(ctx, 'import/rollback', { id: 'nope' })
+  assert(bad.json.ok === false && bad.json.error?.code === 'not-found', '无效快照 id → not-found')
+}
+
+/** T22 — uninstall：先 bm 出库（清行）后引导官方 remove；dormant 可逆 */
+async function caseUninstallOrder() {
+  console.log('\n[T22] uninstall：bm 出库 + dormant + 官方命令引导 + 可逆')
+  const { shellHome, profileDir, dshHome, pkgDir } = buildCase('t22-uninstall')
+  installFake(profileDir, 'dsh-good', JSON.stringify(goodManifest()))
+  const ctx = makeCtx()
+  await bootCase({
+    name: 't22', dshHome, profileDir, pkgDir, shellHome,
+    env: { pluginManagerHome: shellHome }, ctx, profileDeps: { 'dsh-good': '1.0.0' },
+  })
+  // 托管 ON
+  await callApi(ctx, 'apply', { entries: { 'dsh-good': true } })
+  const regBefore = JSON.parse(readFileSync(join(shellHome, 'registry.json'), 'utf8'))
+  assert(regBefore.presets?.default?.['dsh-good'] !== undefined, '卸载前 dsh-good 在表中')
+  // 卸载
+  const un = await callApi(ctx, 'uninstall', { pkg: ['dsh-good', 'dsh-base'] })
+  const v = un.json.value
+  assert(un.json.ok === true, 'uninstall ok')
+  assert(v.uninstalled.includes('dsh-good'), 'dsh-good 出库')
+  // 框架硬保护：dsh-base 被拒
+  assert(v.rejected.some(r => r.pkg === 'dsh-base' && r.code === 'framework-protected'), '卸载框架被拒')
+  // bm 出库：registry 行清空（激活表 + failed）
+  const regAfter = JSON.parse(readFileSync(join(shellHome, 'registry.json'), 'utf8'))
+  assert(regAfter.presets?.default?.['dsh-good'] === undefined, 'bm 出库后 registry 行已清')
+  // 出库只动 registry，不碰 manifest（依赖仍在 = dormant）
+  assert(JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8')).dependencies['dsh-good'] !== undefined,
+    'bm 出库不碰 manifest（依赖仍在 → dormant）')
+  assert(v.dormant.includes('dsh-good'), 'dsh-good 退化为 dormant dependency')
+  // 官方命令引导（先出库后 remove）
+  assert(v.command.includes('remove dsh-good') && v.command.includes('dsh-good'), '返回官方 remove 引导命令')
+  assert(v.dormant.length === 1, 'dormant 恰为 dsh-good（deps-only 托管包）')
+  // dormant 可逆：写回 registry 行 enabled → 恢复管理（apply ON 重新托管）
+  const applyBack = await callApi(ctx, 'apply', { entries: { 'dsh-good': true } })
+  assert(applyBack.json.ok === true, 'dormant 可逆：apply ON 恢复托管')
+  const regRev = JSON.parse(readFileSync(join(shellHome, 'registry.json'), 'utf8'))
+  assert(regRev.presets?.default?.['dsh-good']?.state === 'managed-by-bm', '恢复托管后行状态 managed-by-bm')
+}
+
+/** T23 — 反应式 GC：行包已不在 deps/磁盘 → 清行 + failed 账本 */
+async function caseReactiveGC() {
+  console.log('\n[T23] 反应式 GC：外部已删包 → 清行 + failed 提示')
+  const { shellHome, profileDir, dshHome, pkgDir } = buildCase('t23-gc')
+  // registry 表里有 dsh-gone，但依赖/磁盘都无 → boot 应清行 + 记 failed
+  writeJson(join(shellHome, 'registry.json'), {
+    version: 1,
+    activePreset: 'default',
+    presets: { default: { 'dsh-gone': { config: null, state: 'managed-by-bm' } } },
+    failed: {},
+  })
+  const ctx = makeCtx()
+  await bootCase({
+    name: 't23', dshHome, profileDir, pkgDir, shellHome,
+    env: { pluginManagerHome: shellHome }, ctx, profileDeps: {},
+  })
+  const reg = JSON.parse(readFileSync(join(shellHome, 'registry.json'), 'utf8'))
+  assert(reg.presets?.default?.['dsh-gone'] === undefined, 'GC 清掉外部已删包的行')
+  assert(reg.failed['dsh-gone'] !== undefined, 'GC 记 failed 账本')
+  assert(reg.failed['dsh-gone']?.kind === 'not-a-bundle', 'GC failed 账本 kind=not-a-bundle')
+  assert(reg.failed['dsh-gone']?.error.includes('外部移除'), 'GC failed 提示外部移除')
+  const list = await callApi(ctx, 'list', {})
+  const row = list.json.value.plugins.find(p => p.pkg === 'dsh-gone')
+  assert(row === undefined, 'GC 后 list 不再出现 dsh-gone 行')
+}
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -693,6 +941,14 @@ async function main() {
     caseRenameMigration,
     casePresetSaveWithDraft,
     casePresetDelete,
+    // 0.5.0 对外双轨 / 卸载半边
+    caseRowStateMachine,
+    caseDoubleMountFilter,
+    caseImportToBm,
+    caseExportToBundles,
+    caseImportRollback,
+    caseUninstallOrder,
+    caseReactiveGC,
   ]
   for (const fn of cases) {
     try {

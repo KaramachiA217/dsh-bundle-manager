@@ -1,20 +1,20 @@
 # dsh-bundle-manager 使用与开发手册
 
 > 完整详细的插件挂载管理器使用与开发手册。快速入门见 `README.md`。
-> 版本：0.4.5。最后更新：2026-08-16。
+> 版本：0.5.0。最后更新：2026-08-19。
 
 ---
 
 ## 1. 概述
 
-`dsh-bundle-manager` 是 DSH 桌面/Web 端的**运行时插件挂载管理器**：在设置页提供一个「插件挂载管理」section，对**可选第三方插件 bundle** 做运行时挂载/卸载——**瞬时生效、零重启、不写 profile manifest**。
+`dsh-bundle-manager` 是 DSH 桌面/Web 端的**运行时插件挂载管理器**：在设置页提供一个「插件挂载管理」section，对**可选第三方插件 bundle** 做运行时挂载/卸载——**瞬时生效、零重启、不写 profile manifest**。v0.5 起提供**官方共存（双轨）**（官方静态层 ↔ bm 运行时层可逆切换）与**卸载半边**（bm 出库 → 官方 remove + 反应式 GC）。
 
 ### 1.1 做什么 / 不做什么
 
 | | 说明 |
 |---|---|
-| ✅ 做 | 统一插件列表（每行状态点：active / loading / pending / unmounted / failed / broken-manifest）；运行时 `loader.create/remove` 挂载/卸载；预设（preset）保存与切换；坏插件挂载失败自动回退 + 重试 |
-| ❌ 不做 | **安装/卸载插件**（`dsh plugin add/remove` 的事）；**改写 `dsh.profile.bundles`**；重启 dsh；碰 `.dsh/profiles/<name>/package.json` |
+| ✅ 做 | 统一插件列表（每行状态点：active / loading / pending / unmounted / failed / broken-manifest / superseded-by-static / pending-import）；运行时 `loader.create/remove` 挂载/卸载；预设（preset）保存与切换；坏插件挂载失败自动回退 + 重试；**官方共存**（v0.5）：import/export/export-all 双轨切换 + 一键回滚；**卸载半边**（v0.5）：bm 出库 → 引导官方 remove + 反应式 GC |
+| ❌ 不做 | **安装插件**（`dsh plugin add` 的事）；**日常运行时挂载/启停改写 `dsh.profile.bundles`**（v0.5 仅 import/export/export-all 三个显式操作写 manifest，其余零写盘）；自动 spawn 官方 `dsh plugin remove`（卸载半边 = bm 出库 + 引导用户手动执行官方命令） |
 
 ### 1.2 核心机制一句话
 
@@ -56,13 +56,14 @@ dsh plugin --profile <name> add <path-to-this-package>
 
 ## 3. 使用指南（UI）
 
-设置 → 插件挂载管理，页面分四块：
+设置 → 插件挂载管理，页面分五块：
 
 1. **头部**：显示当前 profile 名（0.4.1 起无「刷新」按钮——挂载表唯一写者是本页「保存并刷新」、保存后硬刷新，重拉场景不存在；防误读为「重载页面」）。
 2. **预设区**：显示当前激活预设名；下拉切换预设；输入新预设名 +「保存为预设」。
-3. **插件列表（统一）**：每行 = 插件名 + 版本徽标 + 当前状态点（已挂载/未挂载/挂载失败/挂载中-等待服务）+ 开关（草稿）。有未保存更改的行标「待保存」。
-4. **提交栏**：「保存并刷新」（主按钮）+「放弃更改」。
-5. **错误横幅 + 重试**（0.4.1）：首次/重新拉取列表失败时显示错误横幅 + 「重试拉取」按钮（明确语义、有反馈）；非静默、非靠盲点。
+3. **官方共存（双轨管理）卡（v0.5）**：官方静态层包逐个「导入到 bm」；bm 托管包逐个「导出到官方」/「卸载」；底部「导出全部到官方（安全网）」+「回滚上次导入」。操作均经确认 Dialog，结果/引导（含重启、官方命令）经结果 Dialog 展示。
+4. **插件列表（统一）**：每行 = 插件名 + 版本徽标 + 当前状态点（已挂载/未挂载/挂载失败/挂载中-等待服务/官方静态层/待重启接管）+ 开关（草稿）。有未保存更改的行标「待保存」；`superseded-by-static` / `pending-import` / `broken-manifest` 行**只读**（开关禁用）。
+5. **提交栏**：「保存并刷新」（主按钮）+「放弃更改」。
+6. **错误横幅 + 重试**（0.4.1）：首次/重新拉取列表失败时显示错误横幅 + 「重试拉取」按钮（明确语义、有反馈）；非静默、非靠盲点。
 
 ### 3.1 操作语义
 
@@ -73,6 +74,11 @@ dsh plugin --profile <name> add <path-to-this-package>
 - **切换预设**：应用该预设的挂载集 + 自动刷新。
 - **「保存为预设」（0.4.2/0.4.4）**：把**当前草稿勾选（含未提交）合并**进快照存为命名预设——**预设 = 你想要的组合，无需先「保存并刷新」**；**保存「新」预设会自动设为当前激活**（随后「保存并刷新」应用的就是刚保存的预设——消除「保存了预设2、保存并刷新却改了预设1」的困惑）；**覆盖已有预设不切换激活**（只更新记录）并弹「覆盖确认」。保存后 toast 提示应用需点「保存并刷新」。
 - **「删除预设」（0.4.3）**：预设卡红色「删除预设」按钮（与「保存为预设」横向平分一行）→ 弹**多选选择器**（默认与当前激活预设不可选）→「下一步」→ **不可逆确认**（「将永久移除：A、B…」）→ 确认删除；删除后列表自动刷新。host 同时防御：拒删 default 与当前激活预设、拒非法名/空数组。
+- **双轨操作（v0.5）**：
+  - **导入到 bm**：官方静态层 → bm（摘 manifest 条 + 预注册 + 引导重启）。导入成功后可「回滚上次导入」一键还原。
+  - **导出到官方**：bm 托管 → 官方固化（重启后永久随 dsh 启动）。
+  - **卸载**：bm 出库（清 registry 行）→ 结果 Dialog 给出确切官方命令 `dsh plugin remove pkg...`，按指引手动执行完成物理移除。
+  - 结果 Dialog 中显示 `needsRestart` 与依赖组提示（「A 还依赖 X，建议同批次导入」）。
 
 ### 3.2 保存 = 应用 + 刷新
 
@@ -90,19 +96,26 @@ dsh plugin --profile <name> add <path-to-this-package>
 
 | method | body | 返回 value | 说明 |
 |---|---|---|---|
-| `list` | `{}` | 见下 | 统一插件列表（含当前挂载状态 + 存储状态） |
-| `apply` | `{ entries: { "<pkg>": true\|false, ... } }` | `{ ok:true }` | 一次性应用整张挂载表（diff：create/remove），**同步完成**（客户端等它返回后再刷新）；经变更队列串行（30s 上限） |
+| `list` | `{}` | 见下 | 统一插件列表（含当前挂载状态 + 存储状态 + 官方静态层 bundles + 行状态 regState） |
+| `apply` | `{ entries: { "<pkg>": true\|false, ... } }` | `{ ok:true }` | 一次性应用整张挂载表（diff：create/remove），**同步完成**（客户端等它返回后再刷新）；经变更队列串行（30s 上限）。**已在官方静态层的包 apply ON 被拒（`superseded-by-static`，防双重挂载）** |
 | `preset/save` | `{ name }` | `{ ok:true }` | 把当前挂载表快照为 `presets[name]`；经变更队列 |
 | `preset/switch` | `{ name }` | `{ ok:true }` | diff 切换预设，同步完成；经变更队列 |
+| `preset/delete` | `{ names }` | `{ ok:true }` | 多选删除预设（拒 default / 拒当前激活） |
+| `import-to-bm`（v0.5） | `{ pkg: string[] }` | `{ imported[], rejected[], needsRestart, snapshotId, hints[] }` | 官方 → bm：校验（dependencies 内、是 bundle、非框架）→ 摘 manifest `bundles` 条 → registry 行预注册（静态层包标 `pending-import` / deps-only 标 `managed-by-bm`）→ 引导重启 |
+| `export-to-bundles`（v0.5） | `{ pkg: string[] }` | `{ exported[], rejected[], needsRestart }` | bm → 官方固化：加进 `bundles` → 行标 `superseded-by-static` → 引导重启 |
+| `export-all-to-bundles`（v0.5） | `{}` | `{ exported[], needsRestart }` | 安全网：批量写回全部托管到官方静态层 |
+| `import/rollback`（v0.5) | `{ id }` | `{ ok, rolledBack[], needsRestart }` | 一键回滚上次导入批次（写回 bundles + 还原 registry 行） |
+| `uninstall`（v0.5） | `{ pkg: string[] }` | `{ uninstalled[], rejected[], dormant[], command, guide }` | **先 bm 出库**（清 registry 行，不碰 manifest）→ **引导**官方 `dsh plugin remove pkg...`；官方失败退化为 dormant dependency（可逆） |
 
 ### 4.2 `list` 返回结构
 
 ```json
 {
   "profile": "rc6-dev",
-  "version": "0.4.5",
+  "version": "0.5.0",
   "activePreset": "default",
   "presets": ["default"],
+  "bundles": ["@deepseek-ai/dsh-base", "dsh-settings-ui", "dsh-bundle-manager"],
   "storage": {
     "path": "<DSH_BUNDLE_MANAGER_HOME>/registry.json",
     "mode": "shell",
@@ -111,32 +124,41 @@ dsh plugin --profile <name> add <path-to-this-package>
   },
   "plugins": [
     { "pkg": "dsh-conversation-search", "version": "0.2.2",
-      "mounted": true, "state": "active", "error": null, "managed": true, "waitingFor": [] },
+      "mounted": true, "state": "active", "regState": "managed-by-bm",
+      "error": null, "managed": true, "waitingFor": [] },
     { "pkg": "dsh-balance", "version": "0.1.0",
-      "mounted": false, "state": "unmounted", "error": null, "managed": false, "waitingFor": [] },
+      "mounted": false, "state": "unmounted", "regState": "managed-by-bm",
+      "error": null, "managed": false, "waitingFor": [] },
     { "pkg": "dsh-wechat-bridge", "version": "0.1.0",
-      "mounted": false, "state": "failed", "error": "…", "managed": false,
+      "mounted": false, "state": "failed", "regState": "managed-by-bm", "error": "…", "managed": false,
       "kind": "activate-failed", "attempts": 2, "waitingFor": [] },
     { "pkg": "dsh-broken", "version": "未知",
-      "mounted": false, "state": "broken-manifest", "error": "package.json 解析失败，无法判定是否为可选插件", "managed": false }
+      "mounted": false, "state": "broken-manifest", "regState": null,
+      "error": "package.json 解析失败，无法判定是否为可选插件", "managed": false },
+    { "pkg": "dsh-locked", "version": "0.3.0",
+      "mounted": true, "state": "superseded-by-static", "regState": "superseded-by-static",
+      "error": null, "managed": false, "waitingFor": [] }
   ]
 }
 ```
 
-- `plugins[]` = 每个候选一行：`mounted` 当前实际挂载态；`state ∈ active | loading | pending | unmounted | failed | broken-manifest`；`error` 失败信息。
-- `managed`：`true` = 本插件管理器运行时创建；`false` = 其它来源。
+- `plugins[]` = 每个候选一行：`mounted` 当前实际挂载态；`state ∈ active | loading | pending | unmounted | failed | broken-manifest`，v0.5 增 `superseded-by-static`（官方静态层只读）/ `pending-import`（待重启接管）；`regState` = 该行 registry 状态（`managed-by-bm | superseded-by-static | pending-import`，只读行的 state == regState）。
+- `managed`：`true` = 本插件管理器运行时创建；`false` = 其它来源（官方静态层 boot 挂载）。
 - `waitingFor[]`（v0.3）：pending/loading 行的「还在等哪些服务」。
 - `kind` / `attempts`（v0.3）：failed 行的失败分类与次数。`kind ∈ import-failed | activate-failed | pending-timeout | config-invalid | manifest-invalid | not-a-bundle | unknown`。
 - `broken-manifest`（v0.3）：package.json 解析失败的依赖——可见但**不可 toggle**。
 - `storage`（v0.3）：挂载表写入状态。`writable:false` 时设置页顶部显示警示条。
+- `bundles`（v0.5）：官方静态层（`dsh.profile.bundles`，只读展示）——供「官方共存 / 双轨」UI 用。
 
 ### 4.3 错误码
 
 | code | 含义 |
 |---|---|
-| `framework-protected` | 尝试 toggle 框架核心包（dsh-base / dsh-web-app / dsh-settings-ui / dsh-bundle-manager） |
-| `bad-request` | 非法 pkg / 预设名 / 预设不存在 / 非 bundle / 坏清单包 |
-| `not-found` | 未知 method |
+| `framework-protected` | 尝试 toggle / import / export / 卸载框架核心包（dsh-base / dsh-web-app / dsh-settings-ui / dsh-bundle-manager） |
+| `superseded-by-static`（v0.5） | 尝试 apply ON 已在官方静态层的包（双重挂载防线） |
+| `manifest-write-error`（v0.5） | profile manifest 写入失败 / 写后校验失败（已回滚）——import/export/export-all 场景 |
+| `bad-request` | 非法 pkg / 预设名 / 预设不存在 / 非 bundle / 坏清单包 / 空 pkg 数组 |
+| `not-found` | 未知 method / 导入快照 id 不存在或已过期 |
 | `forbidden` | 未过围栏 |
 | `internal` | 未捕获异常 |
 | `storage-error`（v0.3） | 挂载已生效但 registry 写盘失败（本次更改重启后失效） |
@@ -153,8 +175,8 @@ dsh plugin --profile <name> add <path-to-this-package>
   "version": 1,
   "activePreset": "default",
   "presets": {
-    "default": { "dsh-balance": { "config": null } },
-    "work":    { "dsh-balance": { "config": null } }
+    "default": { "dsh-balance": { "config": null, "state": "managed-by-bm" } },
+    "work":    { "dsh-balance": { "config": null, "state": "managed-by-bm" } }
   },
   "failed": {
     "dsh-wechat-bridge": { "error": "…", "at": 1755000000000, "kind": "activate-failed", "attempts": 2 }
@@ -162,11 +184,20 @@ dsh plugin --profile <name> add <path-to-this-package>
 }
 ```
 
-- `presets[activePreset]` = 当前要挂的表（pkg → `{ config }`）；**不在表内 = OFF**。
+- `presets[activePreset]` = 当前要挂的表（pkg → `{ config, state }`）；**不在表内 = OFF**。
+- `state`（v0.5）：行状态机——`managed-by-bm`（bm 运行时挂）｜`superseded-by-static`（已固化到官方静态层，bm 不 create、只读展示）｜`pending-import`（已导入 bm、待重启接管）。旧格式行（无 state）归一化为 `managed-by-bm`（向后兼容）。
 - `config` 预留（无配置编辑 UI，恒为 `null`）。
 - `failed`（v0.3）：`kind` 失败分类 + `attempts` 次数（成功挂载即删；账本 ≤128 条按 `at` 淘汰最旧）。
 
-### 5.1 持久层选址（v0.3：shell / generic 双布局）
+### 5.0b registry 行状态机迁移规则（v0.5）
+
+| 状态 | 触发 | bm 是否 create | UI 展示 | 迁移 |
+|---|---|---|---|---|
+| `managed-by-bm` | 默认 / apply ON / boot create 成功 | ✅ | 可 toggle | — |
+| `superseded-by-static` | boot/apply/preset 发现包在官方静态层；export/export-all | ❌（防双重挂载） | 只读（「官方静态层」徽标） | 包被 import 移出 bundles 后，下次 boot 转 `pending-import` → create 成功转 `managed-by-bm` |
+| `pending-import` | import-to-bm（原静态层包） | —（待重启） | 只读（「待重启接管」徽标） | 重启后 boot 尝试 create → 转 `managed-by-bm` |
+
+## 5.1 持久层选址（v0.3：shell / generic 双布局）
 
 | 模式 | 触发 | primary | legacyMirror（`.dsh/profiles/<name>/bundle-manager/registry.json`） |
 |---|---|---|---|
@@ -231,6 +262,32 @@ dsh-bundle-manager/
 ### 6.6 可选插件判定（0.2.3 起含 node_modules 扫描）
 
 「可选插件候选」= **并集**：① `dependencies` 里、`package.json` 有 `dsh.bundle.patch`、且不在 framework 白名单的包；② **扫 `profiles/<name>/node_modules/`**（含 `@scope/pkg`）里声明 `dsh.bundle.patch` 的包（「已装未声明」也可见可挂）。纯库（无 `dsh.bundle`）不算候选；patch 直接挂载的 provider（如 `@deepseek-ai/dsh-web-search-exa`，无 `dsh.bundle`）也不在候选内。**package.json 解析失败的依赖 → `broken-manifest` 行**（可见、不可 toggle，v0.3）。
+
+> **v0.5 候选过滤**：candidates 再排除**当前官方静态层**（`dsh.profile.bundles`，现读 manifest、不缓存）——已在官方静态层的包不给「可管理 / toggle」入口（它们只读展示为 `superseded-by-static`，需 import 才归 bm 管理）。
+
+### 6.7 官方共存（双轨，v0.5）
+
+- **create 过滤（防双重挂载）**：boot / apply / preset 的 create 前一律 `!bundles.includes(pkg)`；已静态挂载的包 bm 绝不重复 create，行自动收敛为 `superseded-by-static`。
+- **import-to-bm**：官方 → bm——白名单校验（必须在 dependencies 且是 bundle、非框架）→ 摘 manifest `bundles` 条 → registry 行预注册（静态层包 `pending-import` / deps-only `managed-by-bm`）→ `needsRestart` 引导重启接管。
+- **export-to-bundles**：bm → 官方固化——加进 `bundles` → 行标 `superseded-by-static` → 重启生效。**export-all-to-bundles** = 卸载安全网（批量写回全部托管，然后可 `dsh plugin remove dsh-bundle-manager` 全身而退）。
+- **client 无卸载链**（`loader.unload` stub）→ import/export 一律引导重启生效（设计约束，不补卸载链）。
+
+### 6.8 A 级安全冗余（写 manifest 场景，v0.5）
+
+导入/导出是「永不写 manifest」铁律的三类显式例外，全部走：
+
+1. **原子写 + 备份 + JSON.parse 回滚**：写 profile `package.json`（临时文件 + rename）前备份 `.bm.bak`（last-known-good）；写后 `JSON.parse` 校验失败自动回滚；坏 manifest **拒绝写入**（`manifest-write-error`，绝不覆盖坏文件）。
+2. **预注册 + 失败可见**：导入先置 registry 行 enabled，失败进 `failed` 账本 + 响应带 `imported` / `rejected`（逐项 code+message）——绝不静默。
+3. **一键回滚批次**：写前生成快照（被改 bundles + 受影响行前状态），`import/rollback { id }` 写回 bundles + 还原行 + 引导重启。快照存 host 内存（导入需重启，回滚在重启前发生），保留最近 20 个。
+4. **依赖组感知（提示级）**：导入前查导入包 `package.json` 的直接 dependencies，若含「已装、是 bundle、同批未导入」的包 → hint「A 还依赖 X，建议同批次导入」。进程内免 spawn 的轻量启发式（近似 `pnpm why` 直接依赖层）。
+5. **framework 白名单保留**：import / export / export-all / uninstall 均拒框架核心包（与 bundles 排除「或」关系，防从 bundles 剔框架仍被硬保护）。
+
+### 6.9 卸载半边（v0.5）
+
+- **uninstall { pkg[] }**：**先 bm 出库**（清 registry 行：激活表 + 所有预设 + failed，只动 bm 自有文件、不碰 manifest）→ **引导**官方 `dsh plugin remove pkg...`（官方透传 pnpm、支持批量，reconcile 自动收 bundles）。
+  - **顺序论证**：先出库后 remove——官方失败退化成 **dormant dependency**（已装、闲置），可逆（registry 行写回 enabled 即恢复管理）；反向会复现 registry 悬空。
+  - bm **不在进程内自动 spawn** 官方命令（进程内跑 pnpm / `dsh plugin remove` 会动共享 `profiles/node_modules` 并可能杀死运行中的实例）；响应返回确切 `command` + 引导文案。
+- **反应式 GC（保险丝）**：boot 后扫 registry，行对应包**不在 `dependencies` 且不在 node_modules**（被外部官方直删、绕过 bm）→ 清行 + 记 `failed`（kind `not-a-bundle`、提示「外部移除」）。不依赖每次卸载都走 bm 入口。
 
 ---
 
@@ -298,7 +355,7 @@ ctx.webServer.register({ kind: 'prefix', path: '/bundle-manager/api', handler: a
 ### 8.3 验证清单（自检）
 
 - [ ] `node --check lib/index.js lib/client.js` 通过。
-- [ ] **`node test/harness.mjs` 159 断言全过**（v0.3 起：迁移/坏文件保底/播种/broken-manifest/看门狗/storage-error/框架保护/预设 diff/generic 双写；含一个 ~20s 用例）。
+- [ ] **`node test/harness.mjs` 210 断言全过**（迁移/坏文件保底/播种/broken-manifest/看门狗/storage-error/框架保护/预设 diff/generic 双写/双轨状态机/create 过滤防双重挂载/import 原子写+回滚批次/uninstall 顺序+dormant/反应式 GC；含一个 ~20s 用例）。
 - [ ] 设置页列表正确（包名 + 版本 + state；broken-manifest 行黄色点禁用；failed 行带分类+次数；storage 告警条）。
 - [ ] toggle 开关 → 内存树该行出现/消失；registry 更新；无重启。
 - [ ] 重启 → 按表重挂（shell 模式 registry 在壳目录，`.dsh` mirror 不再被写）。
@@ -327,8 +384,9 @@ ctx.webServer.register({ kind: 'prefix', path: '/bundle-manager/api', handler: a
 
 - 客户端经浏览器信任围栏（loopback + 同源，与 `/api` 网关一致）访问路由；fence 非鉴权层（威胁模型 = 本机信任，官方一致）。
 - 不读写凭据；不改 approval/sandbox/credentials 配置；`cordis.patch.yml` 只做 insert、无 `!!js`。
-- 无 `eval`/`Function`/`child_process`/外部 `fetch`。
-- 用户输入（pkg / 预设名）进文件系统路径前先白名单校验（pkg 必须命中 `dependencies` 键；预设名 `^[A-Za-z0-9_-]{1,32}$`）。
+- 无 `eval`/`Function`/`child_process`/外部 `fetch`（卸载半边不自动 spawn 官方命令，只返回命令引导用户执行）。
+- 用户输入（pkg / 预设名）进文件系统路径前先白名单校验（pkg 用 key 白名单 `^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`（scoped 包两段同规则）且必须命中 `dependencies` 键；预设名 `^[A-Za-z0-9_-]{1,32}$`）。
+- 「永不写 manifest」铁律仅在 `import-to-bm` / `export-to-bundles` / `export-all-to-bundles` 三个显式操作打破（§6.8），其余运行时挂载/启停/出库零写盘；写 manifest 走 A 级冗余（原子写 + `.bm.bak` + JSON.parse 回滚 + 拒绝覆盖坏文件）。
 - 写 JSON 用 `fs.writeFileSync`（2 空格 + 尾换行 + 无 BOM），杜绝 PowerShell `Set-Content -Encoding UTF8` 的 BOM 事故。
 
 ---

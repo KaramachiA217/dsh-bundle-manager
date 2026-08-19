@@ -26,8 +26,8 @@ DSH Web/桌面端插件：在设置页提供一个「插件挂载管理」sectio
 
 | | 说明 |
 |---|---|
-| ✅ 做 | 列出所有可选插件（统一列表 + 当前状态）；**草稿式开关**：勾选要挂载的插件 → 点「保存并刷新」一次性应用并自动刷新页面；预设保存/切换；坏插件挂载失败进 Failed + 可重试 |
-| ❌ 不做 | **安装/卸载插件**（`dsh plugin add/remove` 的事）；**改写 `dsh.profile.bundles`**；重启 dsh；碰 `.dsh/profiles/<name>/package.json` |
+| ✅ 做 | 列出所有可选插件（统一列表 + 当前状态）；**草稿式开关**：勾选要挂载的插件 → 点「保存并刷新」一次性应用并自动刷新页面；预设保存/切换；坏插件挂载失败进 Failed + 可重试；**官方共存（v0.5）**：把官方静态层插件导入 bm 管理、把 bm 托管插件固化回官方静态层、以及卸载半边（bm 出库 → 引导官方 remove） |
+| ❌ 不做 | **安装/卸载插件**（`dsh plugin add` 的事；卸载半边由 bm 出库 + 引导官方 `dsh plugin remove` 组合完成）；**日常运行时挂载/启停不写 `dsh.profile.bundles`**（v0.5 仅在 import/export/export-all 三个显式操作时写 manifest，其余零写盘）；重启 dsh（import/export 需重启生效是设计约束） |
 
 **交互模型（v0.2）**：开关只改**本地草稿**，不做任何即时生效；点「保存并刷新」才把整张表 POST 给 host → host diff 应用（create/remove）+ 持久化 → 客户端硬刷新页面。装载与取消装载走同一条「保存 + 刷新」流程，避免 client 无卸载链带来的混乱。
 
@@ -48,7 +48,7 @@ dsh-bundle-manager/
 ├── lib/
 │   ├── index.js        # host 半：读 profile / 自管持久层 / 启动期重挂 / fenced 路由 / disposer
 │   └── client.js       # client 半：window.__ModuleLoader__.load CJS 工厂 / kit Section UI
-├── test/harness.mjs    # 离线回归（mock ctx 直驱 fenced API，159 断言；scratch 自动清理）
+├── test/harness.mjs    # 离线回归（mock ctx 直驱 fenced API，210 断言；scratch 自动清理）
 ├── README.md / MANUAL.md / CHANGELOG.md
 └── registry.json       # （运行时生成，勿提交）挂载表：shell 模式在壳仓库，generic 在包内+profile mirror
 ```
@@ -88,6 +88,19 @@ dsh-bundle-manager/
 - **boot 并发可调**：启动挂载默认 4 组并行（可设环境变量 `DSH_PM_BOOT_GROUPS`，1=完全串行，1–8 有效），快速失败项自动串行单飞重试一次以区分「并发假失败」与「真失败」；详见 MANUAL §6.4。
 - **UI 无「刷新」按钮（0.4.1）**：挂载表唯一写者是本页「保存并刷新」（保存后硬刷新），手动重拉场景不存在；列表拉取失败会显示错误横幅 + 「重试拉取」（语义精确、有反馈）；挂载中的插件显示「挂载中/等待服务」，会自行 settle。
 
+### 3.4 官方共存（双轨，v0.5）
+
+插件可处于**两条轨道**之一，可逆切换且**需重启生效**（客户端无卸载链，见 §5 限制 1）：
+
+- **官方静态层**（`dsh.profile.bundles`）：随 dsh boot 加载、永久；这些包**不归 bm toggle**（只读展示为 `superseded-by-static`）；要交给 bm 运行时管理用「**导入到 bm**」（`import-to-bm`）。
+- **bm 运行时层**：进程内挂载/卸载、零重启；用「**导出到官方**」（`export-to-bundles`）固化回静态层，或「**导出全部到官方**」（`export-all-to-bundles`）作为卸载安全网（先批量写回全部托管，再 `dsh plugin remove dsh-bundle-manager` 即可全身而退）。
+
+import/export 会**改 profile manifest**——这是「永不写 manifest」铁律的三个显式例外，全部走 **A 级安全冗余**：原子写 + `.bm.bak` 备份 + JSON.parse 校验回滚；预注册 + 失败可见（`imported`/`rejected` 逐项）；一键回滚批次（`import/rollback`，写前快照）；依赖组提示；framework 硬保护。
+
+**卸载半边（v0.5）**：① **bm 出库**——清 registry 行（只动 bm 自有文件、不碰 manifest）；② **引导**官方 `dsh plugin remove pkg...`（官方透传 pnpm、支持批量，reconcile 自动收 bundles）。先出库后 remove——若官方失败，包退化为 **dormant dependency**（已装、闲置），在设置页重新勾选（registry 行写回 enabled）即恢复管理。另有**反应式 GC**：boot 扫 registry，行对应包已被外部直删（绕过 bm）→ 清行 + 记 `failed`。
+
+> **家族插件单轨说明**：本工作区其余家族插件（mcp / search / proxy / skill / balance 等）维持**单轨**——只进 `dependencies`、由 bm 运行时挂载，不参与双轨 import/export（不改动消费方 8 仓代码）。双轨是 bm 对**对外用户**提供的可选增强：用户走官方 `dsh plugin add` 全装后，想用 bm 管理某包才导入。家族插件无需适配双轨即可被 bm 正常管理。
+
 ## 4. 边界
 
 - **framework 白名单不可下放**：`dsh-base` / `dsh-web-app` / `dsh-settings-ui` / 本插件自己禁止 toggle（`framework-protected`）。
@@ -101,7 +114,7 @@ dsh-bundle-manager/
 3. **环境变量**：`DSH_PROFILE`（读 profile 目录用，桌面壳 main.js 注入，缺失从包路径推导再回退 `'web'`）；`DSH_BUNDLE_MANAGER_HOME`（v0.3，桌面壳注入，挂载表落壳仓库、零写 `.dsh`；缺失/非法回退 generic 双写）。
 4. **config 编辑未实现**：挂载表里的 `config` 预留（默认 `null`）。带 config 的插件后续 UI 再补。
 5. **写盘失败会明示**（v0.3）：registry 写失败时，操作响应返回 `storage-error`、设置页顶部出现黄色警示条（「本次更改重启后可能失效」）；挂载本身在内存已生效。
-6. **兼容性**：开发/实测基准为 deepseek-harness **0.1.0-rc.5**（`@deepseek-ai/cordis` 4.x rc、`dsh-host-webserver`/`dsh-client-runtime`/`dsh-client-ui-slots` 0.1.x rc）。**rc.6 实测通过（2026-08-17）**：rc5 与 rc6 源码同 commit（`47f9438`，仅 npm bump），rc6 内核下运行时挂载/卸载、framework 白名单、坏插件隔离（Failed 组 + kind/attempts）、预设切换、registry 落盘、client 半全部通过，**零代码适配**。已知差异：`link:` 挂载因 ESM 解析失败，须用 `file:` tgz；dsh-bundle-manager 用自有 fenced 路由，不依赖 rc5 的 `WEB_SETTINGS_NAMESPACES` 本地补丁。升级 dsh 版本后请重跑 `npm test` 与 dev 壳两阶验证。
+6. **兼容性**：开发/实测基准为 deepseek-harness **0.1.0-rc.5**（`@deepseek-ai/cordis` 4.x rc、`dsh-host-webserver`/`dsh-client-runtime`/`dsh-client-ui-slots` 0.1.x rc）。**rc.6 实测通过（2026-08-17）**：rc5 与 rc6 源码同 commit（`47f9438`，仅 npm bump），rc6 内核下运行时挂载/卸载、framework 白名单、坏插件隔离（Failed 组 + kind/attempts）、预设切换、registry 落盘、client 半全部通过，**零代码适配**。已知差异：`link:` 挂载因 ESM 解析失败，须用 `file:` tgz；dsh-bundle-manager 用自有 fenced 路由，不依赖 rc5 的 `WEB_SETTINGS_NAMESPACES` 本地补丁。**rc.7（2026-08-19）**：bm 消费的唯一 kit 表面 `settings.section` 未变；kit 钉 npm 发行版 `dsh-settings-ui@0.2.22`（bm **不依赖** kit 0.3.0 的 `pluginCard`/`settingsScope` 新表面，与之解耦并行）；v0.5 双轨 import/export 与官方静态层共存。壳验证走 `rc7-bm` 测试 profile（runbook 由主控串行执行）。升级 dsh 版本后请重跑 `npm test` 与 dev 壳两阶验证。
 
 ## 6. 安全
 
@@ -114,7 +127,7 @@ dsh-bundle-manager/
 
 ```sh
 node --check lib/index.js lib/client.js     # 纯 JS，无构建步骤
-node test/harness.mjs                       # 离线回归：159 断言（迁移/坏文件/播种/看门狗/存储错误/框架保护/预设 diff）
+node test/harness.mjs                       # 离线回归：210 断言（迁移/坏文件/播种/看门狗/存储错误/框架保护/预设 diff/双轨/卸载/GC）
 npm pack --cache <npm-cache-dir>            # 出 tgz（file: 挂载，禁 link:）
 ```
 

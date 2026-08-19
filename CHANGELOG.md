@@ -2,6 +2,34 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.5.0] - 2026-08-19
+
+### Added（对外双轨 + 卸载半边，见 BM0.5-IMPLEMENTATION-PLAN）
+
+- **官方共存（三处落点）**：
+  - `candidates` 排除集 = framework 白名单 ∪ 当前 `dsh.profile.bundles`（现读 manifest、不缓存）——已在官方静态层的包不再给「可管理/toggle」入口。
+  - boot / apply / preset 的 create 前 `!bundles.includes(pkg)` 过滤——防「官方静态层 + bm 运行时」**双重挂载**；静态层包的行自动收敛为 `superseded-by-static`。
+  - registry 行状态机：`managed-by-bm`（bm 运行时挂）｜`superseded-by-static`（已固化，bm 不 create、list 只读展示、禁止 toggle）｜`pending-import`（已导入、待重启接管）。旧格式行（无 state）向后兼容归一化为 `managed-by-bm`。
+- **导入 / 写回（FUTURE-DIRECTION §2.5，fenced 路由 + 引导重启生效）**：
+  - `import-to-bm { pkg[] }`：官方 → bm——白名单校验（必须在 dependencies）→ 从 `dsh.profile.bundles` 摘条 → registry 行预注册（原静态层包标 `pending-import`、deps-only 包标 `managed-by-bm`）→ 引导重启接管。
+  - `export-to-bundles { pkg[] }`：bm → 官方固化——加进 `dsh.profile.bundles` → 行标 `superseded-by-static` → 引导重启（永久随 dsh 启动）。
+  - `export-all-to-bundles`：卸载安全网——批量写回全部托管，随后 `dsh plugin remove dsh-bundle-manager` 可全身而退、功能不丢。
+- **A 级安全冗余（§2.6 五条，导入/导出全走）**：
+  1. 原子写 + 备份 + JSON.parse 回滚：写 profile manifest（临时文件 + rename）前备份 `package.json.bm.bak`，写后解析失败自动回滚；坏 manifest 拒绝写入。
+  2. 预注册 + 失败可见：导入先置 registry 行 enabled，失败进 `failed` 账本 + UI 明示「未接管 n 个」；`import-to-bm` 返回 `imported` / `rejected`（含 code+message）。
+  3. 一键回滚批次：写前生成快照（被改 manifest 片段 + 受影响行前状态），`import/rollback { id }` 写回 bundles + 还原行 + 引导重启。
+  4. 依赖组感知（提示级）：导入前查导入包的直接 dependencies，提示「A 还依赖 X，建议同批次导入」（进程内轻量启发式，近似 `pnpm why` 直接层）。
+  5. framework 白名单保留：import / export / export-all / uninstall 均拒框架核心包。
+- **卸载半边（§1.2）**：
+  - `uninstall { pkg[] }`：**先 bm 出库**（清 registry 行，batch，只动 bm 自有文件、不碰 manifest）→ **引导**官方 `dsh plugin remove pkg...`（官方透传 pnpm、支持批量、reconcile 自动收 bundles）。顺序论证：先出库后 remove——官方失败退化成 dormant dependency（可逆：registry 行写回 enabled 即恢复管理）。
+  - **反应式 GC（保险丝）**：boot 后扫 registry，行对应包已不在 deps 且不在 node_modules（被外部官方直删、绕过 bm）→ 清行 + 记 `failed`（kind `not-a-bundle`、提示「外部移除」）。
+- `list` 返回新增：顶层 `bundles`（官方静态层只读）；每行 `regState`；新增只读行 `superseded-by-static` / `pending-import`。
+- 新增错误码 `superseded-by-static`（对静态层包 apply ON 被拒）。
+
+### 其他
+
+- `test/harness.mjs` 新增 T17–T23（状态机迁移 / create 过滤防双重挂载 / import 原子写+.bm.bak+失败可见 / export 固化 / 一键回滚批次 / uninstall 顺序+dormant 可逆 / 反应式 GC），共 **210 断言全绿**。
+
 ## [0.4.5] - 2026-08-17
 
 ### Changed
