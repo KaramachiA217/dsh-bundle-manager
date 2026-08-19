@@ -1,6 +1,6 @@
 {
   "name": "dsh-bundle-manager",
-  "version": "0.5.0",
+  "version": "0.5.3",
   "description": "DSH web plugin: runtime mount manager for optional third-party plugin bundles — mount/unmount bundle rows in-process through the Loader API (instant, no restart, never touches the profile manifest), with named presets and self-healing failure fallback. v0.5 adds official coexistence (import/export between the official static layer and the bm runtime layer, reversible) and the uninstall half (bm de-registry → official remove + reactive GC). (renamed from dsh-plugin-manager)",
   "type": "module",
   "main": "lib/index.js",
@@ -43,7 +43,7 @@
     "node": ">=20"
   },
   "peerDependencies": {
-    "dsh-settings-ui": ">=0.2.16",
+    "dsh-settings-ui": ">=0.3.0",
     "@deepseek-ai/cordis": ">=4.0.0-rc.0",
     "@deepseek-ai/dsh-host-webserver": ">=0.1.0-rc.0",
     "@deepseek-ai/dsh-client-runtime": ">=0.1.0-rc.0",

@@ -802,11 +802,13 @@ async function caseExportToBundles() {
   console.log('\n[T20] export-to-bundles：固化 + superseded-by-static')
   const { shellHome, profileDir, dshHome, pkgDir } = buildCase('t20-export')
   installFake(profileDir, 'dsh-good', JSON.stringify(goodManifest()))
+  installFake(profileDir, 'dsh-plain', JSON.stringify(goodManifest())) // 候选：已装但从未托管
   // 计数式 create：验证 bm 实际 create 挂载 dsh-good
   const ctx = makeCtx((options) => 'ok')
   await bootCase({
     name: 't20', dshHome, profileDir, pkgDir, shellHome,
-    env: { pluginManagerHome: shellHome }, ctx, profileDeps: { 'dsh-good': '1.0.0' },
+    env: { pluginManagerHome: shellHome }, ctx,
+    profileDeps: { 'dsh-good': '1.0.0', 'dsh-plain': '1.0.0' },
   })
   // 先托管 dsh-good（deps-only → bm 挂载）
   let apply = await callApi(ctx, 'apply', { entries: { 'dsh-good': true } })
@@ -821,13 +823,20 @@ async function caseExportToBundles() {
   assert(profileBundlesOf(profileDir).includes('dsh-good'), 'dsh-good 已加入官方静态层')
   const reg = JSON.parse(readFileSync(join(shellHome, 'registry.json'), 'utf8'))
   assert(reg.presets?.default?.['dsh-good']?.state === 'superseded-by-static', '导出后行标 superseded-by-static')
+  // 0.5.1：未托管候选（已装、无 registry 行）也可导出固化——不要求 bm 托管行
+  const exPlain = await callApi(ctx, 'export-to-bundles', { pkg: ['dsh-plain'] })
+  const vp = exPlain.json.value
+  assert(exPlain.json.ok === true, '未托管候选导出 ok')
+  assert(vp.exported.includes('dsh-plain'), '导出包含 dsh-plain（未托管候选）')
+  assert(vp.needsRestart === true, '候选导出后需重启')
+  assert(profileBundlesOf(profileDir).includes('dsh-plain'), 'dsh-plain 已加入官方静态层')
   // framework-hard-protect：导出框架被拒
   const fw = await callApi(ctx, 'export-to-bundles', { pkg: ['dsh-bundle-manager'] })
   assert(Array.isArray(fw.json.value?.rejected) && fw.json.value.rejected.some(r => r.code === 'framework-protected'),
     '导出框架被拒（framework-protected）')
-  // 未托管包导出被拒
+  // 未安装包导出被拒（非候选也非托管行）
   const notManaged = await callApi(ctx, 'export-to-bundles', { pkg: ['dsh-ghost'] })
-  assert(notManaged.json.value.rejected.some(r => r.pkg === 'dsh-ghost'), '未托管包导出 rejected')
+  assert(notManaged.json.value.rejected.some(r => r.pkg === 'dsh-ghost'), '未安装包导出 rejected')
 }
 
 /** T21 — import/rollback：一键回滚批次（写回 bundles + 还原 registry 行） */
@@ -919,6 +928,28 @@ async function caseReactiveGC() {
   assert(row === undefined, 'GC 后 list 不再出现 dsh-gone 行')
 }
 
+/** T24 — 候选发现：官方 @deepseek-ai scope 不进候选（headless 事故回归）；非核心孤儿仍可发现（P9） */
+async function caseCoreScopeExcluded() {
+  console.log('\n[T24] 候选发现：@deepseek-ai scope 排除 + 非核心孤儿保留')
+  const { shellHome, profileDir, dshHome, pkgDir } = buildCase('t24-core-scope')
+  // 官方 scope 的 runner 型 bundle（patch 声明 dsh.bundle，但属核心家族，2026-08-19 headless 事故同型）
+  installFake(profileDir, '@deepseek-ai/dsh-core-x', JSON.stringify({
+    name: '@deepseek-ai/dsh-core-x', version: '0.1.0',
+    dsh: { bundle: { patch: './cordis.patch.yml' } },
+  }))
+  // 非核心孤儿（装了但未声明 deps）：P9 设计仍应可发现
+  installFake(profileDir, 'dsh-orphan', JSON.stringify(goodManifest()))
+  const ctx = makeCtx()
+  await bootCase({
+    name: 't24', dshHome, profileDir, pkgDir, shellHome,
+    env: { pluginManagerHome: shellHome }, ctx, profileDeps: {},
+  })
+  const res = await callApi(ctx, 'list', {})
+  const pkgs = res.json.value.plugins.map(p => p.pkg)
+  assert(!pkgs.includes('@deepseek-ai/dsh-core-x'), '官方 @deepseek-ai scope 包不进候选列表')
+  assert(pkgs.includes('dsh-orphan'), '非核心孤儿包仍可发现（P9 保留）')
+}
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -949,6 +980,7 @@ async function main() {
     caseImportRollback,
     caseUninstallOrder,
     caseReactiveGC,
+    caseCoreScopeExcluded,
   ]
   for (const fn of cases) {
     try {

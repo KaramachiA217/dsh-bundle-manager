@@ -2,6 +2,43 @@
 
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.5.3] - 2026-08-19
+
+### Changed（壳窗②用户实测 UI 批次：折叠 + 显隐 + 节奏统一）
+
+- **双轨/预设卡折叠（A）**：两卡默认收起为一行标题（带计数/当前预设 + ▸/▾），展开状态存 localStorage（`dsh-bundle-manager.ui.collapsed.v1`）。
+- **按状态显隐（B）**：官方共存卡在「无静态层包且无托管包」时整卡隐藏；预设切换器仅在预设数 >1 时显示。
+- **多选批量**（0.5.1 延续）：静态层/托管行复选框 + 卡头全选 + 批量导入/导出/卸载按钮。
+- **导出放行未托管候选**（0.5.1 延续）：已装可选 bundle 无需 bm 托管行即可固化到官方静态层。
+- **官方核心 scope 排除候选**（0.5.2 延续）：`@deepseek-ai` scope 不再进入候选列表（headless 事故修复）。
+- **垂直节奏统一交给 kit**：删除 bm 全部 ad-hoc 间距（卡 margin / 行 marginBottom / 动作栏 marginTop），间距由 kit 0.3.0 的节奏规则集（卡间 8px、区块 12px、卡体 stack 10px，对齐官方设置页）统一控制；**peer 依赖升 `dsh-settings-ui >=0.3.0`**——消费方不再各自手调 UI 间距，未来 UI 问题改 kit 即可。
+
+### 其他
+
+- `test/harness.mjs`：T20 扩展（未托管候选导出）+ 新增 T24（官方 scope 排除 + 非核心孤儿保留），**216 断言全绿**。
+
+## [0.5.2] - 2026-08-19
+
+### Changed（壳窗②实测事故修复：候选发现混入官方核心包）
+
+- **候选发现排除整个 `@deepseek-ai` 官方 scope**：node_modules 扫描（P9 孤儿捕获）不再把官方核心家族包当候选——其中 runner 型 bundle（如 `dsh-headless`，patch 含 `code-runtime` 行）被误导出进静态层会与基础层重复行 ID 直接 brick boot（2026-08-19 rc7-bm 实测：`duplicate loader entry id: code-runtime`）。非 `@deepseek-ai` scope 的孤儿插件仍可发现（P9 保留）。
+
+### 其他
+
+- `test/harness.mjs` 新增 T24：`@deepseek-ai/dsh-core-x`（官方 scope bundle）不进候选列表；非核心孤儿 `dsh-orphan` 仍可发现。
+
+## [0.5.1] - 2026-08-19
+
+### Changed（壳窗②用户实测反馈修复）
+
+- **`export-to-bundles` 放行未托管候选**：已装可选 bundle（候选、无 registry 行）也可直接「导出到官方」固化——不再要求 bm 托管行（此前未挂载插件导出报 `not-managed`）。有行则同时标 `superseded-by-static`；无行仅加进 `dsh.profile.bundles`。未安装/非候选仍拒绝。
+- **双轨 UI 多选批量**：官方静态层卡与 bm 托管卡的行加复选框 + 卡头全选；勾选后出现「批量导入到 bm（n）」「批量导出到官方（n）」「批量卸载（n）」；操作完成后清空选择。
+- **双轨行垂直间距**：`sui-row` 在 kit CSS 未定义（行无间距、按钮上下紧贴）→ 行样式补 `marginBottom: 8px`，批量按钮栏补 `marginTop: 8px`。
+
+### 其他
+
+- `test/harness.mjs` T20 扩展：未托管候选导出断言（`dsh-plain` 已装未托管 → 导出成功加入 bundles）；未安装包导出仍 rejected。
+
 ## [0.5.0] - 2026-08-19
 
 ### Added（对外双轨 + 卸载半边，见 BM0.5-IMPLEMENTATION-PLAN）
